@@ -7,10 +7,13 @@ move a PTZ camera to saved presets or drive it manually, and (optionally)
 power off/reboot the broadcast computer — all from a phone or tablet on
 the local network.
 
-This repo is the **web panel only**. It doesn't capture or encode video
-itself — it shells out (via a small, explicit `sudo` allowlist) to
+The web panel (`www/`, `python/`, `apache/`) doesn't capture or encode
+video itself — it shells out (via a small, explicit `sudo` allowlist) to
 whichever backend is actually doing that. See "Backend: two options"
-below.
+below. This repo also includes the original code for the recommended
+backend (`relay/`) and a set of reliability scripts for running this
+unattended on a remote, hard-to-physically-access machine (`ops/`) — see
+each directory's own README.
 
 ## Backend: two options
 
@@ -19,14 +22,15 @@ stream, switch scenes, and answer status queries. Pick one:
 
 ### Option A (recommended on modest/older hardware): a GStreamer NDI→RTMP relay
 
-A separate, minimal `gst-launch-1.0` pipeline that reads an NDI camera
-feed and pushes straight to YouTube's RTMP ingest — no GUI, no
-compositor, nothing running that isn't strictly needed. This is **not
-included in this repo** (it's its own small project, including a
-from-source-built Rust NDI GStreamer plugin, its own systemd units, and
-its own config) — you build/deploy it separately and point this repo's
-`vars.php` at it. See `CHANGES.md` for why this option exists and what
-it replaced.
+A minimal `gst-launch-1.0` pipeline that reads an NDI camera feed and
+pushes straight to YouTube's RTMP ingest — no GUI, no compositor, nothing
+running that isn't strictly needed. Its own scripts/systemd
+units/install steps are in **`relay/`** in this repo — see
+`relay/README.md`. It depends on one piece that genuinely isn't included
+here (an external, unmodified Rust GStreamer plugin, plus NDI's own
+proprietary redistributable runtime — both documented, with exact build
+steps, in `relay/README.md`). See `CHANGES.md` for why this option exists
+and what it replaced.
 
 If you're standing up this option, `www/vars-template.php` already
 assumes it (the `$set_scene`/`$start_stream`/`$stop_stream` variables
@@ -81,8 +85,13 @@ sudo apt install -y \
   meson ninja-build pkg-config cargo rustc
 ```
 
-Then build and deploy the relay itself (separate project, not in this
-repo — see "Backend" above).
+Then follow `relay/README.md` in this repo for the rest (building the
+external NDI GStreamer plugin, installing the NDI runtime, deploying
+`relay/`'s scripts and systemd units).
+
+Also consider `ops/README.md` — the hardware/gateway watchdogs and boot
+notification scripts it documents are optional but recommended for any
+unattended, remotely-managed install like this one.
 
 ### 2b. If using Option B (OBS)
 

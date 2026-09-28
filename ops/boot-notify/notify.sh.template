@@ -1,0 +1,30 @@
+#!/bin/sh
+# Sends a push notification via a Home Assistant webhook.
+# Usage: notify.sh "Title" "Message text"
+#
+# Copy this to notify.sh, fill in your real webhook URL/secret, then:
+#   chmod 700 notify.sh   (it embeds a shared secret -- treat it like a password)
+set -eu
+
+WEBHOOK_URL="https://your-home-assistant-host/api/webhook/your-webhook-id"
+SECRET="your-webhook-shared-secret"
+
+TITLE="${1:?Usage: $0 TITLE MESSAGE}"
+MESSAGE="${2:?Usage: $0 TITLE MESSAGE}"
+
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+TITLE_ESC=$(json_escape "$TITLE")
+MESSAGE_ESC=$(json_escape "$MESSAGE")
+
+HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+  -H "Content-Type: application/json" \
+  "$WEBHOOK_URL" \
+  -d "{\"secret\":\"$SECRET\",\"title\":\"$TITLE_ESC\",\"message\":\"$MESSAGE_ESC\"}")
+
+if [ "$HTTP_CODE" != "200" ]; then
+  echo "notify: unexpected HTTP status $HTTP_CODE" >&2
+  exit 1
+fi

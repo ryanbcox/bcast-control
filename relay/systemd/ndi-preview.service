@@ -1,0 +1,18 @@
+[Unit]
+Description=GStreamer NDI preview-thumbnail capture for bcast-control web panel
+After=network-online.target systemd-tmpfiles-setup.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=broadcast
+Group=broadcast
+EnvironmentFile=/opt/ndi-relay/relay.env
+ExecStart=/opt/ndi-relay/bin/run-preview.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

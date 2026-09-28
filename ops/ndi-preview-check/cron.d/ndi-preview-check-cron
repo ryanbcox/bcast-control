@@ -1,0 +1,1 @@
+*/2 * * * * root nice -n 19 /usr/local/sbin/ndi-preview-check.sh

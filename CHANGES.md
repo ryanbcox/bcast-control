@@ -71,13 +71,19 @@ human-readable summary.
 - **`www/styles.css`** — added styling for the PTZ D-pad layout and the
   preset-card number badge / press-flash.
 
-## Not included in this repo
+## Repo layout: `relay/` and `ops/` added
 
-The GStreamer relay itself (the actual pipeline that talks to the camera
-and pushes to YouTube) is a separate piece of software living outside
-this project, referenced only through the `sudo`-wrapped shell commands
-in `vars.php`/`www/*.php`. It's not included here because it's not a fork
-of this project and has its own separate codebase, build process
-(includes a from-source Rust NDI GStreamer plugin), and systemd units.
-If you're standing this up fresh, you'll need to build/deploy that
-separately and point `vars.php` at wherever you put it.
+The GStreamer relay's own original code (the scripts and systemd units in
+`vars.php`/`www/*.php`'s `sudo`-wrapped calls) is now included, under
+`relay/` — see `relay/README.md`. So are a set of reliability scripts
+written for running this unattended (hardware/gateway watchdogs, boot
+notification, a self-heal for a known relay startup race), under `ops/`
+— see `ops/README.md`.
+
+**Not included**, and not something this repo can vendor:
+- The actual NDI GStreamer elements (`ndisrc`/`ndisrcdemux`) — external,
+  unmodified code from
+  [teltek/gst-plugin-ndi](https://github.com/teltek/gst-plugin-ndi)
+  (LGPL). `relay/README.md` documents the exact commit and build steps.
+- NDI's own proprietary redistributable runtime library.
+- OBS Studio itself, for Option B.

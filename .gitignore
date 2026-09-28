@@ -1,9 +1,14 @@
 config.json
 config*
 .DS_Store
+__pycache__/
 cpy.sh
 *config.js*
 vars.php
 www/img/*.jpg
 get_cert_vars.sh
 Blank.psd
+relay/relay.env
+relay/relay-mode.env
+relay/night-mode.env
+ops/boot-notify/notify.sh

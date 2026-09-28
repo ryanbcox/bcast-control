@@ -1,0 +1,19 @@
+[Unit]
+Description=GStreamer NDI->RTMP relay (non-OBS alternative to bcast-control)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=broadcast
+Group=broadcast
+EnvironmentFile=/opt/ndi-relay/relay.env
+EnvironmentFile=-/opt/ndi-relay/relay-mode.env
+ExecStart=/opt/ndi-relay/bin/run-relay.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

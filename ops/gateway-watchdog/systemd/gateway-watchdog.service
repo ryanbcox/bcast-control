@@ -1,0 +1,6 @@
+[Unit]
+Description=Reboot if the default gateway has been unreachable too long
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gateway-watchdog.sh

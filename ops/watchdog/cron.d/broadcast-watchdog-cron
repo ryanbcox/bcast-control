@@ -1,0 +1,1 @@
+* * * * * root nice -n 19 /usr/local/sbin/watchdog-check.sh
