@@ -1,0 +1,877 @@
+--- /tmp/upstream-check/bcast-control/www/bcast.js	2026-09-21 16:59:11.946378069 -0600
++++ /opt/bcast-control/www/bcast.js	2026-09-20 16:05:43.562289380 -0600
+@@ -3,6 +3,8 @@
+ var startstop = false;
+ var refresh;
+ var keyName = "unknown";
++var updatesPaused = false;
++var lastStatusSuccess = Date.now();
+ 
+ console.log(config);
+ 
+@@ -11,35 +13,12 @@
+    config.cameras.forEach(makeCamera);
+ }
+ 
+-function loadKeys(){
+-   config.streamKeys.forEach(loadKey);
+-}
+-
+-function loadKey(k){
+-   $('<option>', {
+-      value: k.key,
+-      text: k.name
+-   }).appendTo('#keys');
+-}
+-
+-function getKeyName(k){
+-   let keyName = "unknown";
+-   config.streamKeys.forEach(function(o){
+-      if(o.key == k){
+-         keyName = o.name;
+-         return keyName;
+-      }
+-   });
+-   return keyName;
+-}
+-
+ function makeCamera(c) {
+    console.log(c.title + " " + c.pos + c.img);
+    var cam = config.template;
+-   let ret = /\$title/g
+    cam = cam.replace("$img", c.img);
+-   cam = cam.replace(ret, c.title);
+-   cam = cam.replace("$pos", c.pos);
++   cam = cam.replace(/\$title/g, c.title);
++   cam = cam.replace(/\$pos/g, c.pos);
+    $('#camctl').append(cam);
+ }
+ 
+@@ -51,26 +30,25 @@
+ }
+ 
+ function getStatus() {
+-   if (startstop == true) {
++   if (startstop == true || updatesPaused == true) {
+       return;
+    }
+    $.get("./status.php", function (data) {
++      lastStatusSuccess = Date.now();
+       clearStatusClasses();
+ 
+       data = JSON.parse(data);
+ 
+       if (data.streamingStatus == false) {
+          $('#startbutton').prop('disabled', false);
+-         $('#stopbutton').prop('disabled', false);
++         $('#stopbutton').prop('disabled', true);
+          $('#streamstate').addClass("text-bg-info");
+          $('#streamstate').html("Ready to Stream");
+       }
+       else if (data.streamingStatus == true) {
+          $('#streamstate').addClass("text-bg-success");
+ 
+-         keyName = getKeyName(data.streamKey);
+-
+-         $('#streamstate').html("Streaming " + keyName);
++         $('#streamstate').html("Streaming");
+          $('#startbutton').prop('disabled', true);
+          $('#stopbutton').prop('disabled', false);
+       }
+@@ -94,6 +72,8 @@
+          $("#blank").show();
+       }
+ 
++      $("#nightmodeswitch").prop("checked", data.nightMode == true);
++
+ 
+ 
+    })
+@@ -115,11 +95,9 @@
+    $('#streamstate').addClass("btn-outline-danger");
+    $('#streamstate').html("Starting Stream");
+    
+-   $.post("/setstart.php?key=" + $("#keys").val(), function (data) {
+-      //success!
++   $.post("/start.php", function (data) {
+       $('#startbutton').prop('disabled', true);
+       $('#stopbutton').prop('disabled', false);
+-      keyName = $("#keys option:selected").text();
+    }
+    ).fail(function(error){
+       alert("Failed to start stream!");
+@@ -146,6 +124,9 @@
+ }
+ 
+ function getPreview() {
++   if (updatesPaused == true) {
++      return;
++   }
+    d = new Date();
+    $("#preview").attr("src", config.preview_uri + "?time=" + d.getTime());
+ }
+@@ -185,19 +166,25 @@
+    clearInterval(refresh);
+ }
+ 
+-function PTZ(pos) {
++function PTZ(pos, el) {
+    //"http://192.168.109.194/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&0"
+    //$.post(config.camera_uri + "/api/v1/ptzControl.lua?Action=load-preset&Id=" + pos, function (data) {
+    $.post(config.camera_uri + pos, function (data) {
+ 
+    });
++   if (el) {
++      var card = $(el).find('.card');
++      card.addClass('ptz-flash');
++      setTimeout(function () {
++         card.removeClass('ptz-flash');
++      }, 250);
++   }
+    refresh = setInterval(refreshPTZ, 1000);
+    getPreview();
+ }
+ 
+ loadCameras();
+ getStatus();
+-loadKeys();
+ 
+ const startModal = new bootstrap.Modal("#startModal", {
+    keyboard: false
+@@ -206,7 +193,342 @@
+ const stopModal = new bootstrap.Modal("#stopModal", {
+    keyboard: false
+ });
++const powerOffModal = new bootstrap.Modal("#powerOffModal", { keyboard: false });
++const rebootModal = new bootstrap.Modal("#rebootModal", { keyboard: false });
++const presetSaveModal = new bootstrap.Modal("#presetSaveModal", { keyboard: false });
+ 
+ 
+ getPreview();
+-var previewTimer = setInterval(getPreview, 1000);
+\ No newline at end of file
++var previewTimer = setInterval(getPreview, 1000);
++
++function powerOff() {
++   var input = $("#poweroffDayInput").val();
++   var entered = parseInt(String(input).trim(), 10);
++   var today = new Date().getDate();
++   if (isNaN(entered) || entered !== today) {
++      $("#poweroffDayError").show();
++      return;
++   }
++   $("#poweroffDayError").hide();
++   // Server independently re-validates this against its own local date --
++   // this client-side check is just to avoid an unnecessary round trip for
++   // obviously wrong input, it is not the real enforcement.
++   $.post("/poweroff.php", { day: input }, function (data) {});
++   powerOffModal.hide();
++}
++
++function rebootSystem() {
++   var input = $("#rebootDayInput").val();
++   var entered = parseInt(String(input).trim(), 10);
++   var today = new Date().getDate();
++   if (isNaN(entered) || entered !== today) {
++      $("#rebootDayError").show();
++      return;
++   }
++   $("#rebootDayError").hide();
++   $.post("/reboot.php", { day: input }, function (data) {});
++   rebootModal.hide();
++}
++
++function isValidPresetNumber(n) {
++   return !isNaN(n) && Number.isInteger(n) && ((n >= 0 && n <= 89) || (n >= 100 && n <= 254));
++}
++
++function presetGoto() {
++   var n = parseInt($("#presetNumberInput").val(), 10);
++   if (!isValidPresetNumber(n)) {
++      alert("Enter a valid preset number (0-89 or 100-254).");
++      return false;
++   }
++   $.post("/ptz-goto.php", { pos: n }, function (data) {}).fail(function () {
++      alert("Failed to move to preset " + n + ".");
++   });
++   return false;
++}
++
++function presetSavePrompt() {
++   var n = parseInt($("#presetNumberInput").val(), 10);
++   if (!isValidPresetNumber(n)) {
++      alert("Enter a valid preset number (0-89 or 100-254).");
++      return;
++   }
++   $("#presetSaveNumberDisplay").text(n);
++   presetSaveModal.show();
++}
++
++function presetSave() {
++   var n = parseInt($("#presetNumberInput").val(), 10);
++   if (!isValidPresetNumber(n)) {
++      presetSaveModal.hide();
++      return;
++   }
++   $.post("/ptz-save.php", { pos: n }, function (data) {}).fail(function () {
++      alert("Failed to save preset " + n + ".");
++   });
++   presetSaveModal.hide();
++}
++
++function ptzMove(dir) {
++   var speed = $("#ptzspeed").val();
++   $.get("/ptz-move.php?dir=" + dir + "&speed=" + speed);
++}
++
++function ptzZoom(dir) {
++   var speed = $("#zoomspeed").val();
++   $.get("/ptz-zoom.php?dir=" + dir + "&speed=" + speed);
++}
++
++function ptzNudge(dir) {
++   var speed = $("#ptzspeed").val();
++   $.get("/ptz-nudge.php?dir=" + dir + "&speed=" + speed);
++}
++
++function ptzZoomNudge(dir) {
++   var speed = $("#zoomspeed").val();
++   $.get("/ptz-zoom-nudge.php?dir=" + dir + "&speed=" + speed);
++}
++
++$("#ptzspeed").on("input", function () {
++   $("#ptzspeedval").text($(this).val());
++});
++
++$("#zoomspeed").on("input", function () {
++   $("#zoomspeedval").text($(this).val());
++});
++
++$("#ptzhomebutton").on("click", function () {
++   ptzMove("home");
++});
++
++// Tap vs. press-and-hold: a short press (released before PTZ_TAP_THRESHOLD_MS
++// elapses) sends a single server-timed nudge -- a deterministic pulse
++// (move, wait proportional to speed, stop) so a tap always moves "one
++// increment" regardless of exactly how long the click/touch itself lasted.
++// A press held past the threshold instead starts continuous movement,
++// stopped on release, same as before. Covers mouse and touch, plus losing
++// the cursor off the button (mouseleave) so a drag-off doesn't leave the
++// camera moving indefinitely.
++var PTZ_TAP_THRESHOLD_MS = 200;
++
++$(".ptz-btn").on("mousedown touchstart", function (e) {
++   e.preventDefault();
++   var el = $(this);
++   var dir = el.data("dir");
++   el.data("ptzPressActive", true);
++   el.data("ptzHoldFired", false);
++   var timer = setTimeout(function () {
++      el.data("ptzHoldFired", true);
++      ptzMove(dir);
++   }, PTZ_TAP_THRESHOLD_MS);
++   el.data("ptzHoldTimer", timer);
++});
++$(".ptz-btn").on("mouseup mouseleave touchend touchcancel", function (e) {
++   e.preventDefault();
++   var el = $(this);
++   if (!el.data("ptzPressActive")) {
++      return;
++   }
++   el.data("ptzPressActive", false);
++   clearTimeout(el.data("ptzHoldTimer"));
++   if (el.data("ptzHoldFired")) {
++      ptzMove("stop");
++   } else {
++      ptzNudge(el.data("dir"));
++   }
++});
++
++$(".ptz-zoom-btn").on("mousedown touchstart", function (e) {
++   e.preventDefault();
++   var el = $(this);
++   var dir = el.data("zoomdir");
++   el.data("ptzPressActive", true);
++   el.data("ptzHoldFired", false);
++   var timer = setTimeout(function () {
++      el.data("ptzHoldFired", true);
++      ptzZoom(dir);
++   }, PTZ_TAP_THRESHOLD_MS);
++   el.data("ptzHoldTimer", timer);
++});
++$(".ptz-zoom-btn").on("mouseup mouseleave touchend touchcancel", function (e) {
++   e.preventDefault();
++   var el = $(this);
++   if (!el.data("ptzPressActive")) {
++      return;
++   }
++   el.data("ptzPressActive", false);
++   clearTimeout(el.data("ptzHoldTimer"));
++   if (el.data("ptzHoldFired")) {
++      ptzZoom("stop");
++   } else {
++      ptzZoomNudge(el.data("zoomdir"));
++   }
++});
++
++// Safety net: if the page is closed/navigated away mid-press, try to stop
++// any in-progress camera movement rather than leaving it drifting.
++window.addEventListener("beforeunload", function () {
++   navigator.sendBeacon("/ptz-move.php?dir=stop&speed=1");
++   navigator.sendBeacon("/ptz-zoom.php?dir=stop");
++});
++
++$("#nightmodeswitch").on("change", function () {
++   var enabled = $(this).is(":checked") ? "1" : "0";
++   $.get("/night-mode.php?enable=" + enabled);
++});
++
++$("#pauseUpdatesSwitch").on("change", function () {
++   updatesPaused = $(this).is(":checked");
++   if (!updatesPaused) {
++      // Resuming -- refresh right away instead of waiting for the next tick.
++      getStatus();
++      getPreview();
++   }
++});
++
++// ---- Browser-side connection health check ----
++// Shows a warning banner if getStatus() hasn't succeeded in ~10+ seconds
++// (and updates aren't explicitly paused), then tries to figure out whether
++// the problem is "your device" or "the broadcast computer" by testing
++// general Internet reachability and, best-effort, comparing this device's
++// locally-visible IP against the broadcast computer's own LAN IP/subnet.
++
++var STALE_THRESHOLD_MS = 10000;
++var REACHABILITY_CHECK_INTERVAL_MS = 5000;
++var lastReachabilityCheck = 0;
++var localIpsChecked = false;
++
++function ipToInt(ip) {
++   var parts = String(ip).split('.').map(Number);
++   if (parts.length !== 4 || parts.some(function (n) { return isNaN(n) || n < 0 || n > 255; })) {
++      return null;
++   }
++   return (((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0);
++}
++
++function sameSubnet(ipA, ipB, netmask) {
++   var a = ipToInt(ipA), b = ipToInt(ipB), m = ipToInt(netmask);
++   if (a === null || b === null || m === null) {
++      return null;
++   }
++   return (a & m) === (b & m);
++}
++
++// Best-effort local IP discovery via WebRTC ICE candidate gathering. Modern
++// browsers increasingly obfuscate this behind mDNS ("xxxx.local") for
++// privacy, in which case this simply finds nothing and callback([]) is
++// called -- treat an empty result as "browser didn't expose it", not an
++// error.
++function discoverLocalIPs(callback) {
++   var ips = [];
++   var done = false;
++   var pc;
++   function finish() {
++      if (done) {
++         return;
++      }
++      done = true;
++      try { pc.close(); } catch (e) {}
++      callback(ips);
++   }
++   try {
++      pc = new RTCPeerConnection({ iceServers: [] });
++      pc.createDataChannel("");
++      pc.onicecandidate = function (e) {
++         if (!e || !e.candidate || !e.candidate.candidate) {
++            finish();
++            return;
++         }
++         var match = /([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/.exec(e.candidate.candidate);
++         if (match && ips.indexOf(match[1]) === -1) {
++            ips.push(match[1]);
++         }
++      };
++      pc.createOffer().then(function (offer) {
++         return pc.setLocalDescription(offer);
++      }).catch(finish);
++      setTimeout(finish, 2000);
++   } catch (e) {
++      finish();
++   }
++}
++
++function checkInternetReachable(callback) {
++   if (typeof AbortController === "undefined" || typeof fetch === "undefined") {
++      callback(null); // can't tell -- browser too old
++      return;
++   }
++   var controller = new AbortController();
++   var timeoutId = setTimeout(function () { controller.abort(); }, 4000);
++   // generate_204 is a tiny, purpose-built connectivity-check endpoint --
++   // no-cors mode means we never read the response body/status, only
++   // whether the request completed at all vs. a network-level failure.
++   fetch('https://www.gstatic.com/generate_204', { mode: 'no-cors', cache: 'no-store', signal: controller.signal })
++      .then(function () {
++         clearTimeout(timeoutId);
++         callback(true);
++      })
++      .catch(function () {
++         clearTimeout(timeoutId);
++         callback(false);
++      });
++}
++
++function updateConnectionWarning() {
++   if (updatesPaused) {
++      $("#connectionWarning").hide();
++      return;
++   }
++
++   var staleMs = Date.now() - lastStatusSuccess;
++   if (staleMs < STALE_THRESHOLD_MS) {
++      $("#connectionWarning").hide();
++      localIpsChecked = false; // reset so a future outage re-runs the IP check
++      return;
++   }
++
++   $("#connectionWarningMain").text("Not receiving updates from broadcast computer.");
++   $("#connectionWarning").show();
++
++   var now = Date.now();
++   if (now - lastReachabilityCheck < REACHABILITY_CHECK_INTERVAL_MS) {
++      return; // throttle -- don't hammer the reachability check every tick
++   }
++   lastReachabilityCheck = now;
++
++   checkInternetReachable(function (reachable) {
++      var extra;
++      if (reachable === true) {
++         extra = "Your browser CAN reach the Internet. 1) Try refreshing the page. 2) Check that you're connected to the Liahona WiFi and clicked through the acceptance page. 3) Check YouTube to see if the broadcast is still working. 4) If you can reach YouTube but the broadcast isn't working, panic.";
++      } else if (reachable === false) {
++         extra = "Your web browser can't reach the Internet or the broadcast computer. Connect to the Liahona WiFi and accept the terms.";
++      } else {
++         extra = "";
++      }
++      $("#connectionWarningExtra").text(extra);
++
++      // Best-effort "are you even on the right network" hint -- only
++      // meaningful when the broadcast computer's own known address is on
++      // the WiFi LAN (not e.g. a WireGuard tunnel address), and only if
++      // the browser actually exposes a usable local IP at all.
++      if (!localIpsChecked && typeof RTCPeerConnection !== "undefined" &&
++          typeof SERVER_ADDR !== "undefined" && SERVER_ADDR.indexOf("192.168.") === 0) {
++         localIpsChecked = true;
++         discoverLocalIPs(function (ips) {
++            if (ips.length === 0) {
++               return; // browser didn't expose anything usable -- say nothing
++            }
++            var anySame = ips.some(function (ip) {
++               return sameSubnet(ip, SERVER_ADDR, SERVER_NETMASK) === true;
++            });
++            if (!anySame) {
++               $("#connectionWarningExtra").append(
++                  '<div class="mt-2">This device does not appear to be on the same network as the broadcast computer (this device: ' +
++                  ips.join(', ') + ').</div>'
++               );
++            }
++         });
++      }
++   });
++}
++
++setInterval(updateConnectionWarning, 2000);
+--- /tmp/upstream-check/bcast-control/www/index.html	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/index.html	2026-09-19 20:16:23.884685355 -0600
+@@ -1,128 +1,12 @@
+ <!doctype html>
+-<html lang="en" data-bs-theme="dark">
+-
++<html lang="en">
+ <head>
+    <meta charset="utf-8">
+-   <meta name="viewport" content="width=device-width, initial-scale=1">
+-   <title>Broadcast Controller</title>
+-   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet"
+-      integrity="sha384-SgOJa3DmI69IUzQ2PVdRZhwQ+dy64/BUtbMJw1MZ8t5HZApcHrRKUc4W0kG879m7" crossorigin="anonymous">
+-   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+-   <link rel="stylesheet" href="styles.css">
+-   <script src="config.js"></script>
+-   
++   <meta http-equiv="refresh" content="0; url=index.php">
++   <title>Redirecting...</title>
++   <script>window.location.replace("index.php");</script>
+ </head>
+-
+ <body>
+-   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+-      <div class="container">
+-         <a class="navbar-brand" href="#">Controller</a>
+-
+-         <div class="d-flex">
+-            <span id="streamstate" class="badge text-bg-secondary">Unknown Status</span>
+-         </div>
+-      </div>
+-   </nav>
+-
+-   <div class="modal fade" id="startModal" tabindex="-1">
+-      <div class="modal-dialog">
+-         <div class="modal-content">
+-            <div class="modal-header">
+-               <h5 class="modal-title text-Success">Start Stream</h5>
+-               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+-            </div>
+-            <div class="modal-body">
+-               <p>Select Stream to Start:</p>
+-               <select class="form-select form-select-lg mb-3" aria-label="Stream to Start" id="keys">
+-                  <option selected>Select Stream</option>      
+-               </select>
+-            </div>
+-            <div class="modal-footer">
+-               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+-               <button type="button" class="btn btn-success" onclick="startStream();">Start Stream</button>
+-            </div>
+-         </div>
+-      </div>
+-   </div>
+-
+-   <div class="modal fade" id="stopModal" tabindex="-1">
+-      <div class="modal-dialog">
+-         <div class="modal-content">
+-            <div class="modal-header">
+-               <h5 class="modal-title text-danger">Stop Stream</h5>
+-               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+-            </div>
+-            <div class="modal-body">
+-               <p>Once stopped, the stream cannot be restarted!</p>
+-            </div>
+-            <div class="modal-footer">
+-               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+-               <button type="button" class="btn btn-danger" onclick="stopStream();">Stop Stream</button>
+-            </div>
+-         </div>
+-      </div>
+-   </div>
+-
+-   <div class="container my-3">
+-      <div class="card">
+-         <div class="card-header">
+-            Controls
+-         </div>
+-         <div class="card-body">
+-            <div class="btn-toolbar" role="toolbar">
+-               <div class="btn-group me-1" role="group">
+-                  <button id="startbutton" type="button" data-bs-toggle="modal" data-bs-target="#startModal" class="btn btn-success" disabled>Start</button>
+-               </div>
+-               <div class="btn-group me-1" role="group">
+-                  <button id="stopbutton" type="button" data-bs-toggle="modal" data-bs-target="#stopModal" class="btn btn-danger" disabled>Stop</button>
+-               </div>
+-               <div class="btn-group me-1" role="group">
+-                  <button id="spkrbutton" onclick="speakerTime();" type="button" class="btn btn-info">Normal</button>
+-               </div>
+-               <div class="btn-group me-1" role="group">
+-                  <button id="sacbutton" onclick="sacramentTime();" type="button" class="btn btn-warning">Sacrament</button>
+-               </div>
+-               <div class="btn-group me-1" role="group">
+-                  <button id="blankbutton" onclick="blankTime();" type="button" class="btn btn-secondary">Blank</button>
+-               </div>
+-            </div>
+-         </div>
+-      </div>
+-   </div>
+-
+-   <div class="container my-3">
+-      <div class="card">
+-         <div class="card-header">
+-            Video Preview
+-         </div>
+-         <div class="card-body">
+-            <img id="blank" src="Blank.jpg" class="preview border rounded" style="display:none;" alt="...">
+-            <img id="sacrament" src="SacramentTime.jpg" class="preview border rounded" style="display:none;" alt="...">
+-            <img id="preview" src="camera-placeholder.png" class="preview border rounded" alt="..." style="display:none;" >
+-         </div>
+-      </div>
+-   </div>
+-
+-   <div class="container my-3">
+-      <div class="card">
+-         <div class="card-header">
+-            Camera Selection
+-         </div>
+-         <div class="card-body">
+-            <div class="album py-1 bg-body-tertiary">
+-               <div class="container">
+-                  <div id="camctl" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 g-3">
+-                  </div>
+-               </div>   
+-            </div>
+-         </div>
+-      </div>
+-   </div>
+-
+-   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"
+-      integrity="sha384-k6d4wzSIapyDyv1kpU366/PK5hCdSbCRGRCMv+eplOQJWyd1fbcAu9OCUj5zNLiq"
+-      crossorigin="anonymous"></script>
+-      <script src="bcast.js"></script>
++   <p>Redirecting to <a href="index.php">index.php</a>...</p>
+ </body>
+-
+-</html>
+\ No newline at end of file
++</html>
+--- /tmp/upstream-check/bcast-control/www/set-blank.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/set-blank.php	2026-09-19 10:14:52.475081223 -0600
+@@ -2,6 +2,9 @@
+ 
+ require_once 'vars.php';
+ 
+-print(exec($set_scene . " Blank"));
++exec($set_scene . " Blank", $output, $code);
+ 
+-?>
+\ No newline at end of file
++http_response_code($code === 0 ? 200 : 500);
++print(json_encode(['Result' => $code === 0 ? '200' : '500']));
++
++?>
+--- /tmp/upstream-check/bcast-control/www/setkey.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/setkey.php	2026-09-19 10:14:52.471081362 -0600
+@@ -1,48 +1,4 @@
+ <?php
+-
+-require_once 'vars.php';
+-
+-if(!isset($_GET['key'])){
+-   die("no key!");
+-}
+-
+-
+-$config = file_get_contents($path . $config);
+-
+-$config = json_decode($config);
+-
+-
+-
+-
+-//print_r($config->streamkeys);
+-$key_found = false;
+-$ret = "false";
+-
+-foreach($config->streamkeys as $sk){
+-   if($sk->key == $_GET['key']){
+-      print($sk->key);
+-      $key_found = true;
+-      $ret = exec($set_stream_key . " " . $sk->key);
+-      break;
+-   }
+-}
+-
+-
+-
+-if($key_found & ($ret === "true")){
+-   print("success");
+-}
+-else{
+-   print("failed");
+-}
+-
+-//if(isset($_GET['cam'])){
+-
+-
+-
+-
+-
+-
+-//print(exec($set_stream_key . " Sacrament"));
+-
+-?>
+\ No newline at end of file
++http_response_code(410);
++print(json_encode(['error' => 'Stream key selection is not supported by the relay path.']));
++?>
+--- /tmp/upstream-check/bcast-control/www/set-norm.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/set-norm.php	2026-09-19 10:14:52.475081223 -0600
+@@ -2,6 +2,9 @@
+ 
+ require_once 'vars.php';
+ 
+-print(exec($set_scene . " Broadcast"));
++exec($set_scene . " Broadcast", $output, $code);
+ 
+-?>
+\ No newline at end of file
++http_response_code($code === 0 ? 200 : 500);
++print(json_encode(['Result' => $code === 0 ? '200' : '500']));
++
++?>
+--- /tmp/upstream-check/bcast-control/www/set-sac.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/set-sac.php	2026-09-19 10:14:52.479081085 -0600
+@@ -2,6 +2,9 @@
+ 
+ require_once 'vars.php';
+ 
+-print(exec($set_scene . " Sacrament"));
++exec($set_scene . " Sacrament", $output, $code);
+ 
+-?>
+\ No newline at end of file
++http_response_code($code === 0 ? 200 : 500);
++print(json_encode(['Result' => $code === 0 ? '200' : '500']));
++
++?>
+--- /tmp/upstream-check/bcast-control/www/setstart.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/setstart.php	2026-09-19 10:14:52.471081362 -0600
+@@ -2,32 +2,10 @@
+ 
+ require_once 'vars.php';
+ 
+-if(!isset($_GET['key'])){
+-   die("no key!");
+-}
++exec($set_scene . " Broadcast");
++exec($start_stream, $output, $code);
+ 
++http_response_code($code === 0 ? 200 : 500);
++print(json_encode(['Result' => $code === 0 ? '200' : '500']));
+ 
+-$config = file_get_contents($path . $config);
+-
+-$config = json_decode($config);
+-
+-$key_found = false;
+-$ret = "false";
+-
+-foreach($config->streamkeys as $sk){
+-   if($sk->key == $_GET['key']){
+-      //print($sk->key);
+-      $key_found = true;
+-      $ret = exec($set_stream_key . " " . $sk->key);
+-      break;
+-   }
+-}
+-
+-if(!$key_found || ($ret === "false")){
+-   http_response_code(400);
+-   die("failed");
+-}
+-
+-print(exec($start_stream));
+-
+-?>
+\ No newline at end of file
++?>
+--- /tmp/upstream-check/bcast-control/www/start.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/start.php	2026-09-19 10:14:52.467081501 -0600
+@@ -2,6 +2,12 @@
+ 
+ require_once 'vars.php';
+ 
+-print(exec($start_stream));
++// Ensure scene is Broadcast before/while starting so a fresh stream never
++// silently comes up still in Blank/Sacrament mode from a previous session.
++exec($set_scene . " Broadcast");
++exec($start_stream, $output, $code);
+ 
+-?>
+\ No newline at end of file
++http_response_code($code === 0 ? 200 : 500);
++print(json_encode(['Result' => $code === 0 ? '200' : '500']));
++
++?>
+--- /tmp/upstream-check/bcast-control/www/status.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/status.php	2026-09-19 13:22:35.857017001 -0600
+@@ -2,6 +2,41 @@
+ 
+ require_once 'vars.php';
+ 
+-print(exec($get_status));
++$active = trim(shell_exec('systemctl is-active ndi-relay.service 2>/dev/null'));
++$streamingStatus = ($active === 'active');
+ 
+-?>
+\ No newline at end of file
++$currentScene = 'Broadcast';
++if (is_readable($relay_mode_file)) {
++   foreach (file($relay_mode_file) as $line) {
++      if (preg_match('/^RELAY_MODE=(.*)$/', trim($line), $m)) {
++         $val = trim($m[1]);
++         if (in_array($val, ['Broadcast', 'Sacrament', 'Blank'], true)) {
++            $currentScene = $val;
++         }
++      }
++   }
++}
++
++$nightMode = false;
++if (is_readable($night_mode_file)) {
++   foreach (file($night_mode_file) as $line) {
++      if (preg_match('/^NIGHT_MODE=(.*)$/', trim($line), $m)) {
++         $nightMode = trim($m[1]) === 'on';
++      }
++   }
++}
++
++// No per-request secret is exposed here on purpose -- this endpoint has no
++// auth, and the relay has exactly one configured destination, so there is
++// no meaningful "which key" choice to report. bcast.js only uses this to
++// build a display label.
++$streamKey = 'default';
++
++print(json_encode([
++   'currentScene' => $currentScene,
++   'nightMode' => $nightMode,
++   'streamingStatus' => $streamingStatus,
++   'streamKey' => $streamKey,
++]));
++
++?>
+--- /tmp/upstream-check/bcast-control/www/stop.php	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/stop.php	2026-09-19 10:14:52.471081362 -0600
+@@ -2,6 +2,9 @@
+ 
+ require_once 'vars.php';
+ 
+-print(exec($stop_stream));
++exec($stop_stream, $output, $code);
+ 
+-?>
+\ No newline at end of file
++http_response_code($code === 0 ? 200 : 500);
++print(json_encode(['Result' => $code === 0 ? '200' : '500']));
++
++?>
+--- /tmp/upstream-check/bcast-control/www/styles.css	2026-09-21 16:59:11.950377992 -0600
++++ /opt/bcast-control/www/styles.css	2026-09-20 16:05:54.598324043 -0600
+@@ -6,4 +6,29 @@
+ img.preview-cam{
+    border-top-left-radius: 0.375rem;
+    border-top-right-radius: 0.375rem;
++}
++
++table.ptz-pad td{
++   padding: 0.15rem;
++}
++
++table.ptz-pad .btn{
++   width: 3.5rem;
++}
++
++.ptz-card{
++   position: relative;
++}
++
++.ptz-card .preset-num{
++   position: absolute;
++   bottom: 0.25rem;
++   right: 0.5rem;
++   font-size: 0.7rem;
++   opacity: 0.7;
++}
++
++.ptz-card.ptz-flash{
++   background-color: #28a745 !important;
++   transition: background-color 0.1s ease-in-out;
+ }
+\ No newline at end of file

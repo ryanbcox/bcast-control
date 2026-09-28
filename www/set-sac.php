@@ -2,6 +2,9 @@
 
 require_once 'vars.php';
 
-print(exec($set_scene . " Sacrament"));
+exec($set_scene . " Sacrament", $output, $code);
+
+http_response_code($code === 0 ? 200 : 500);
+print(json_encode(['Result' => $code === 0 ? '200' : '500']));
 
 ?>
