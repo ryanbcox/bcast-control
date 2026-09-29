@@ -2,13 +2,8 @@
 
 // Copy this file to vars.php and fill in real values for your install.
 // vars.php is gitignored -- it holds this deployment's real camera IP and
-// the sudo command strings used to control the GStreamer relay.
-//
-// This assumes the GStreamer NDI->RTMP relay setup (see the project's
-// README / docs for that relay, which lives outside this repo) rather
-// than the original OBS-websocket path -- if you're still using OBS,
-// see this repo's git history prior to the relay cutover for the
-// OBS-oriented version of this file.
+// the sudo command strings used to control the GStreamer relay (see
+// relay/README.md for that backend's own setup).
 
 $ndi_relay_bin = "/opt/ndi-relay/bin/";
 $set_scene = "sudo " . $ndi_relay_bin . "set-scene.sh";

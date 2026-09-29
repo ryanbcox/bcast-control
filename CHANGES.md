@@ -1,12 +1,11 @@
 # Changes from upstream (evade-ninja/bcast-control)
 
-This fork moved the web panel from driving OBS Studio (over obs-websocket)
-to driving a separate, from-source-built GStreamer NDI-to-RTMP relay
-instead, for a single-camera church broadcast setup running on modest,
-older hardware (Dell OptiPlex 390, 4GB RAM) where running a full
-compositor/GUI app 24/7 was more overhead than the job needed. The relay
-itself is a separate project, not included in this repo — see the "Not
-included in this repo" section at the bottom.
+This fork moved the web panel to driving a from-source-built GStreamer
+NDI-to-RTMP relay (see `relay/`), for a single-camera church broadcast
+setup running on modest, older hardware (Dell OptiPlex 390, 4GB RAM)
+where running a full compositor/GUI app 24/7 was more overhead than the
+job needed. See the bottom of this repo's `README.md` for what upstream
+used before.
 
 Full unified diffs for every changed text file are in
 `upstream-diff.patch` in this same directory. This document is the
@@ -14,9 +13,8 @@ human-readable summary.
 
 ## New files not in upstream
 
-- **`www/vars-template.php`** — rewritten for the relay path (was
-  OBS-websocket-oriented). Copy to `vars.php` (gitignored) and fill in
-  your camera's IP and relay paths.
+- **`www/vars-template.php`** — rewritten for the relay path. Copy to
+  `vars.php` (gitignored) and fill in your camera's IP and relay paths.
 - **`www/config-template.js`** — updated `template` string to include the
   preset-number badge and press-flash support that `bcast.js`/`styles.css`
   now expect. Copy to `config.js` (gitignored) and list your camera
@@ -57,14 +55,13 @@ human-readable summary.
   - Added the "go to preset / save preset" input box logic, including a
     save-confirmation flow (saving overwrites the camera's stored preset).
 - **`www/status.php`** — reports the relay's `systemctl is-active` state
-  and current scene/night-mode (read from small state files the relay
-  writes) instead of querying OBS over obs-websocket.
+  and current scene/night-mode, read from small state files the relay
+  writes.
 - **`www/start.php` / `www/stop.php` / `www/setstart.php`** — now
-  `sudo systemctl start/stop` the relay service instead of calling OBS.
+  `sudo systemctl start/stop` the relay service.
 - **`www/set-blank.php` / `www/set-norm.php` / `www/set-sac.php`** — now
   call a `set-scene.sh` script that restarts the relay into a different
-  GStreamer pipeline (live camera vs. a static branded image), instead of
-  switching an OBS scene.
+  GStreamer pipeline (live camera vs. a static branded image).
 - **`www/setkey.php`** — made inert (HTTP 410) since there's no more
   per-stream-key concept; left in place rather than deleted in case
   anything still links to the URL.
@@ -86,4 +83,3 @@ notification, a self-heal for a known relay startup race), under `ops/`
   [teltek/gst-plugin-ndi](https://github.com/teltek/gst-plugin-ndi)
   (LGPL). `relay/README.md` documents the exact commit and build steps.
 - NDI's own proprietary redistributable runtime library.
-- OBS Studio itself, for Option B.
