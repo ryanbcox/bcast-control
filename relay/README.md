@@ -108,7 +108,6 @@ ffmpeg -y -i /opt/bcast-control/www/SacramentTime.jpg -vf scale=1280:720 /opt/nd
 
 ```bash
 sudo systemctl enable --now ndi-relay.service            # the actual YouTube relay
-sudo systemctl enable --now ndi-level.service            # always-on audio-level meter (independent NDI connection)
 sudo systemctl enable --now ndi-preview-watchdog.service  # on-demand preview orchestrator (no NDI connection itself)
 ```
 
@@ -156,12 +155,9 @@ reference — it's superseded by the above and should stay disabled; don't
   output file in place** (not an atomic rename) — a web request can very
   rarely read a partially-written JPEG. Self-heals on the next poll; not
   worth fixing for a best-effort thumbnail.
-- **The audio-level meter (`bin/audio-level-monitor.py`,
-  `ndi-level.service`) holds its own, separate NDI connection to the
-  camera**, independent of `ndi-relay.service`/`ndi-relay-preview.service`.
-  This is intentional (NDI supports multiple simultaneous receivers of one
-  source) and always-on, regardless of whether anyone's viewing the page
-  or a real broadcast is running — unlike the preview image, it was
-  *not* folded into the on-demand model. If you want to reduce total NDI
-  connections further, that's a real option to revisit, but hasn't been
-  done.
+- **The audio-level meter shares the relay's existing connection.** A
+  GStreamer `level` element sits in each relay audio path, and
+  `run-gst.sh` forwards its messages to `audio-level-monitor.py` over a
+  local pipe. The meter process opens no NDI connection and runs only as
+  part of a relay. The meter is stale while neither the real relay nor the
+  on-demand preview relay is running.

@@ -37,7 +37,7 @@ case "$RELAY_MODE" in
       : "${YOUTUBE_RTMP_URL:?Set YOUTUBE_RTMP_URL in relay.env}"
       : "${YOUTUBE_STREAM_KEY:?Set YOUTUBE_STREAM_KEY in relay.env}"
       DEST="${YOUTUBE_RTMP_URL}/${YOUTUBE_STREAM_KEY} live=1"
-      exec gst-launch-1.0 -e \
+      exec /opt/ndi-relay/bin/run-gst.sh \
         ndisrc url-address="${NDI_URL_ADDRESS}" ! ndisrcdemux name=demux \
         demux.video ! queue ! tee name=vtee \
         vtee. ! queue ! videoconvert ! videorate ! video/x-raw,framerate=30/1 ! \
@@ -47,9 +47,10 @@ case "$RELAY_MODE" in
         vtee. ! queue ! videorate ! video/x-raw,framerate=1/3 ! videoconvert ! jpegenc ! \
           multifilesink location=/run/bcast-control/cam.jpg \
         demux.audio ! queue ! audioconvert ! audioresample ! \
+          level interval=200000000 post-messages=true ! \
           voaacenc bitrate="${AUDIO_BITRATE_BPS}" ! aacparse ! mux.
     else
-      exec gst-launch-1.0 -e \
+      exec /opt/ndi-relay/bin/run-gst.sh \
         ndisrc url-address="${NDI_URL_ADDRESS}" ! ndisrcdemux name=demux \
         demux.video ! queue ! tee name=vtee \
         vtee. ! queue ! videoconvert ! videorate ! video/x-raw,framerate=30/1 ! \
@@ -59,6 +60,7 @@ case "$RELAY_MODE" in
         vtee. ! queue ! videorate ! video/x-raw,framerate=1/3 ! videoconvert ! jpegenc ! \
           multifilesink location=/run/bcast-control/cam.jpg \
         demux.audio ! queue ! audioconvert ! audioresample ! \
+          level interval=200000000 post-messages=true ! \
           voaacenc bitrate="${AUDIO_BITRATE_BPS}" ! aacparse ! mux.
     fi
     ;;
@@ -76,13 +78,14 @@ case "$RELAY_MODE" in
     fi
     : "${IMAGE:?}"
     [ -f "$IMAGE" ] || { echo "Missing placeholder image: $IMAGE" >&2; exit 1; }
-    exec gst-launch-1.0 -e \
+    exec /opt/ndi-relay/bin/run-gst.sh \
       filesrc location="${IMAGE}" ! decodebin ! imagefreeze ! videoconvert ! videoscale ! \
         video/x-raw,width=1280,height=720,framerate=30/1 ! \
         x264enc bitrate="${VIDEO_BITRATE_KBPS}" tune=zerolatency key-int-max=60 speed-preset=veryfast ! \
         h264parse ! flvmux name=mux streamable=true ! \
         rtmpsink location="${DEST}" \
       audiotestsrc wave=silence is-live=true ! audioconvert ! audioresample ! \
+        level interval=200000000 post-messages=true ! \
         voaacenc bitrate="${AUDIO_BITRATE_BPS}" ! aacparse ! mux.
     ;;
   *)
