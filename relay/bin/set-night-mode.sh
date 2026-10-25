@@ -1,18 +1,15 @@
 #!/bin/bash
 # Night Test Mode: changes the camera's own "bright" setting (0-14 range,
-# via the camera's documented HTTP CGI) for low-light testing. Pure
-# hardware/camera-side change -- no GStreamer pipeline restart needed,
-# since the brightened signal just flows through as part of the camera's
-# normal live video. (A software videobalance/gamma boost was tried first
-# and dropped -- it washed the image out gray.)
+# via the camera's documented HTTP CGI -- see
+# /opt/ndi-relay/camera-info/smtav-http-cgi-control.txt) for low-light
+# testing. Pure hardware/camera-side change -- no GStreamer pipeline
+# restart needed, since the brightened signal just flows through as part
+# of the camera's normal live video. (A software videobalance/gamma boost
+# was tried first and dropped -- it washed the image out gray.)
 #
 # Every change is logged with a from/to value and a timestamp to
-# camera-image-changelog.log.
-#
-# Derives the camera's IP from NDI_URL_ADDRESS in relay.env (same camera,
-# same network) rather than hardcoding it a second time here. Invoked
-# directly via sudo from the web panel (not through systemd), so it
-# sources relay.env itself instead of relying on EnvironmentFile=.
+# camera-image-changelog.log, per the safety protocol used when this was
+# first tested (2026-09-19/20).
 set -eu
 
 MODE="${1:-}"
@@ -26,13 +23,16 @@ case "$MODE" in
     ;;
 esac
 
+CHANGELOG=/opt/ndi-relay/camera-info/camera-image-changelog.log
+
+# Derives the camera's IP from NDI_URL_ADDRESS in relay.env (same camera,
+# same network) rather than hardcoding it a second time here -- keeps the
+# real camera IP confined to the one gitignored file.
 set -a
 . /opt/ndi-relay/relay.env
 set +a
 : "${NDI_URL_ADDRESS:?Set NDI_URL_ADDRESS in /opt/ndi-relay/relay.env}"
 CAMERA_HOST="${NDI_URL_ADDRESS%%:*}"
-
-CHANGELOG=/opt/ndi-relay/camera-info/camera-image-changelog.log
 CAMERA_BASE="http://${CAMERA_HOST}/cgi-bin/param.cgi"
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

@@ -101,6 +101,27 @@
             <img id="blank" src="Blank.jpg" class="preview border rounded" style="display:none;" alt="...">
             <img id="sacrament" src="SacramentTime.jpg" class="preview border rounded" style="display:none;" alt="...">
             <img id="preview" src="camera-placeholder.png" class="preview border rounded" alt="..." style="display:none;" >
+            <div class="mt-2 form-check">
+               <input type="checkbox" class="form-check-input" id="audioMeterToggle" checked>
+               <label class="form-check-label small text-muted" for="audioMeterToggle">Show audio level</label>
+            </div>
+            <!-- id="audioMeterRow" carries no Bootstrap display utility of
+                 its own on purpose -- jQuery's show/hide sets an inline
+                 "display: none", which Bootstrap's "d-flex" (compiled with
+                 "!important") would otherwise always beat, leaving the row
+                 stuck visible no matter what jQuery does. The flex layout
+                 lives on the inner div instead, which is never shown/hidden
+                 directly. -->
+            <div id="audioMeterRow" class="mt-1">
+               <div class="d-flex align-items-center">
+                  <span id="audioStatusDot" class="audio-status-dot"></span>
+                  <span class="me-2 fw-semibold">Audio</span>
+                  <div class="audio-meter flex-grow-1">
+                     <div id="audioMeterBar" class="audio-meter-bar"></div>
+                  </div>
+                  <span id="audioMeterLabel" class="ms-2 small text-muted" style="min-width: 5.5em; text-align: right;">No signal</span>
+               </div>
+            </div>
          </div>
       </div>
    </div>

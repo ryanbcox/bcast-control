@@ -107,13 +107,23 @@ ffmpeg -y -i /opt/bcast-control/www/SacramentTime.jpg -vf scale=1280:720 /opt/nd
 ### 6. Start it
 
 ```bash
-sudo systemctl enable --now ndi-relay.service     # the actual YouTube relay
-sudo systemctl enable --now ndi-preview.service   # the web panel's preview thumbnail
+sudo systemctl enable --now ndi-relay.service            # the actual YouTube relay
+sudo systemctl enable --now ndi-level.service            # always-on audio-level meter (independent NDI connection)
+sudo systemctl enable --now ndi-preview-watchdog.service  # on-demand preview orchestrator (no NDI connection itself)
 ```
 
 `ndi-relay.service` defaults to `RELAY_MODE=Broadcast` (live camera) on
 start if `relay-mode.env` doesn't exist yet — `bin/set-scene.sh` is what
 the web panel calls to switch modes afterward.
+
+**`ndi-relay-preview.service` is deliberately not enabled/started here** —
+`ndi-preview-watchdog.service` starts and stops it on demand (only while a
+browser is actually fetching `www/preview.php`, and never while
+`ndi-relay.service` is already live), per
+`bin/preview-watchdog.sh`. `ndi-preview.service` (the old always-on
+preview thumbnail capture) is kept in this repo only as historical
+reference — it's superseded by the above and should stay disabled; don't
+`systemctl enable` it on a fresh install.
 
 ## Known limitations (by design, not bugs)
 
@@ -124,12 +134,34 @@ the web panel calls to switch modes afterward.
   every time the scene changes. Revisit this pipeline if seamless
   switching is ever required (would need e.g. `input-selector` with both
   branches always running).
-- **`ndi-preview.service` has a known startup race**: it can settle into
-  `active (running)` while never actually producing a frame, if the
-  camera isn't reachable yet the instant the service starts. Systemd's
-  `Restart=on-failure` does not catch this (the process never exits). See
-  `../ops/ndi-preview-check/` for the cron-driven self-heal for this.
-- **`run-preview.sh`'s `multifilesink` overwrites its output file in
-  place** (not an atomic rename) — a web request can very rarely read a
-  partially-written JPEG. Self-heals on the next ~3s poll; not worth
-  fixing for a best-effort thumbnail.
+- **The old `ndi-preview.service` has a known startup race** (it can settle
+  into `active (running)` while never actually producing a frame, if the
+  camera isn't reachable the instant the service starts), which is why
+  `../ops/ndi-preview-check/`'s cron-driven self-heal existed. That cron
+  job has since been **removed** from the live box, because once the
+  on-demand preview model (`ndi-relay-preview.service` +
+  `ndi-preview-watchdog.service`) shipped, the old script's core
+  assumption — "`cam.jpg` going stale always means something's broken" —
+  became false: a stale `cam.jpg` while nobody's viewing the page is the
+  *correct*, by-design state now, not a fault. Left running, that cron
+  was force-restarting the retired always-on service every ~2 minutes
+  forever, silently defeating the whole point of the on-demand design
+  (caught and fixed 2026-10-25). **If the new on-demand pipeline turns
+  out to have the same startup race, it needs a new, on-demand-aware
+  staleness check** (one that only treats staleness as a fault while
+  `ndi-relay-preview.service` is supposed to be active, per the
+  `preview-lastpoll` marker) — `ops/ndi-preview-check/` has not been
+  rewritten for this yet.
+- **`run-preview.sh`/`run-relay.sh`'s `multifilesink` overwrites its
+  output file in place** (not an atomic rename) — a web request can very
+  rarely read a partially-written JPEG. Self-heals on the next poll; not
+  worth fixing for a best-effort thumbnail.
+- **The audio-level meter (`bin/audio-level-monitor.py`,
+  `ndi-level.service`) holds its own, separate NDI connection to the
+  camera**, independent of `ndi-relay.service`/`ndi-relay-preview.service`.
+  This is intentional (NDI supports multiple simultaneous receivers of one
+  source) and always-on, regardless of whether anyone's viewing the page
+  or a real broadcast is running — unlike the preview image, it was
+  *not* folded into the on-demand model. If you want to reduce total NDI
+  connections further, that's a real option to revisit, but hasn't been
+  done.

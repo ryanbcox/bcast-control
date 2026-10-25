@@ -18,8 +18,6 @@ if(isset($_GET['cam'])){
 }
 
 
-//http://192.168.108.6/cgi-bin/ptzctrl.cgi?ptzcmd&poscall&79
-
 
 
 //print(exec)

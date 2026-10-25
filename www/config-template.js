@@ -1,7 +1,7 @@
 var config =
 {
    "camera_uri": "/ptz.php?cam=",
-   "preview_uri": "/cam.jpg",
+   "preview_uri": "/preview.php",
    "cameras": [
       { "title": "Speaker", "pos": 0, "img": "camera-placeholder.png" },
       { "title": "Preset 61", "pos": 61, "img": "camera-placeholder.png" },

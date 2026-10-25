@@ -1,0 +1,16 @@
+[Unit]
+Description=Starts/stops ndi-relay-preview.service on demand based on web-panel activity
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/ndi-relay/bin/preview-watchdog.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

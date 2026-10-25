@@ -7,15 +7,18 @@
 set -eu
 
 : "${NDI_URL_ADDRESS:?Set NDI_URL_ADDRESS in relay.env}"
-: "${YOUTUBE_RTMP_URL:?Set YOUTUBE_RTMP_URL in relay.env}"
-: "${YOUTUBE_STREAM_KEY:?Set YOUTUBE_STREAM_KEY in relay.env}"
 : "${VIDEO_BITRATE_KBPS:=4500}"
 : "${AUDIO_BITRATE_BPS:=128000}"
 : "${RELAY_MODE:=Broadcast}"
+# "youtube" (default) sends the Broadcast-mode encode to the real YouTube
+# ingest, same as always. "preview" is for the on-demand preview-only
+# instance (ndi-relay-preview.service) -- identical pipeline, encode and
+# all, just with the final sink swapped for a fakesink instead of an actual
+# RTMP connection, so no YouTube credentials are touched/required and
+# nothing is actually published. See NDI_RELAY_ALTERNATIVE.md.
+: "${RELAY_DESTINATION:=youtube}"
 
 export GST_PLUGIN_PATH=/opt/ndi-relay/gst-plugins
-
-DEST="${YOUTUBE_RTMP_URL}/${YOUTUBE_STREAM_KEY} live=1"
 
 case "$RELAY_MODE" in
   Broadcast)
@@ -24,16 +27,48 @@ case "$RELAY_MODE" in
     # multicast traffic NDI's normal discovery relies on, confirmed by
     # testing on 2026-09-19. url-address bypasses discovery entirely and is
     # what actually works here.
-    exec gst-launch-1.0 -e \
-      ndisrc url-address="${NDI_URL_ADDRESS}" ! ndisrcdemux name=demux \
-      demux.video ! queue ! videoconvert ! videorate ! video/x-raw,framerate=30/1 ! \
-        x264enc bitrate="${VIDEO_BITRATE_KBPS}" tune=zerolatency key-int-max=60 speed-preset=veryfast ! \
-        h264parse ! flvmux name=mux streamable=true ! \
-        rtmpsink location="${DEST}" \
-      demux.audio ! queue ! audioconvert ! audioresample ! \
-        voaacenc bitrate="${AUDIO_BITRATE_BPS}" ! aacparse ! mux.
+    #
+    # The video is tee'd: one branch goes to the real encode (to YouTube or
+    # to a fakesink, depending on RELAY_DESTINATION below); the other is a
+    # cheap low-framerate JPEG snapshot written for the web panel's preview
+    # image, so a running instance of this exact pipeline -- real broadcast
+    # or preview-only -- is always what's serving that image.
+    if [ "$RELAY_DESTINATION" = "youtube" ]; then
+      : "${YOUTUBE_RTMP_URL:?Set YOUTUBE_RTMP_URL in relay.env}"
+      : "${YOUTUBE_STREAM_KEY:?Set YOUTUBE_STREAM_KEY in relay.env}"
+      DEST="${YOUTUBE_RTMP_URL}/${YOUTUBE_STREAM_KEY} live=1"
+      exec gst-launch-1.0 -e \
+        ndisrc url-address="${NDI_URL_ADDRESS}" ! ndisrcdemux name=demux \
+        demux.video ! queue ! tee name=vtee \
+        vtee. ! queue ! videoconvert ! videorate ! video/x-raw,framerate=30/1 ! \
+          x264enc bitrate="${VIDEO_BITRATE_KBPS}" tune=zerolatency key-int-max=60 speed-preset=veryfast ! \
+          h264parse ! flvmux name=mux streamable=true ! \
+          rtmpsink location="${DEST}" \
+        vtee. ! queue ! videorate ! video/x-raw,framerate=1/3 ! videoconvert ! jpegenc ! \
+          multifilesink location=/run/bcast-control/cam.jpg \
+        demux.audio ! queue ! audioconvert ! audioresample ! \
+          voaacenc bitrate="${AUDIO_BITRATE_BPS}" ! aacparse ! mux.
+    else
+      exec gst-launch-1.0 -e \
+        ndisrc url-address="${NDI_URL_ADDRESS}" ! ndisrcdemux name=demux \
+        demux.video ! queue ! tee name=vtee \
+        vtee. ! queue ! videoconvert ! videorate ! video/x-raw,framerate=30/1 ! \
+          x264enc bitrate="${VIDEO_BITRATE_KBPS}" tune=zerolatency key-int-max=60 speed-preset=veryfast ! \
+          h264parse ! flvmux name=mux streamable=true ! \
+          fakesink sync=false \
+        vtee. ! queue ! videorate ! video/x-raw,framerate=1/3 ! videoconvert ! jpegenc ! \
+          multifilesink location=/run/bcast-control/cam.jpg \
+        demux.audio ! queue ! audioconvert ! audioresample ! \
+          voaacenc bitrate="${AUDIO_BITRATE_BPS}" ! aacparse ! mux.
+    fi
     ;;
   Blank|Sacrament)
+    # Preview-only instances always force RELAY_MODE=Broadcast (see
+    # ndi-relay-preview.service), so these scenes only ever run as the real
+    # broadcast -- always require real YouTube credentials, same as before.
+    : "${YOUTUBE_RTMP_URL:?Set YOUTUBE_RTMP_URL in relay.env}"
+    : "${YOUTUBE_STREAM_KEY:?Set YOUTUBE_STREAM_KEY in relay.env}"
+    DEST="${YOUTUBE_RTMP_URL}/${YOUTUBE_STREAM_KEY} live=1"
     if [ "$RELAY_MODE" = "Blank" ]; then
       IMAGE=/opt/ndi-relay/images/blank.png
     else

@@ -4,6 +4,10 @@ var startstop = false;
 var refresh;
 var keyName = "unknown";
 var updatesPaused = false;
+// Mirrors the "Show audio level" checkbox -- getAudioLevel() re-reads the
+// checkbox directly every tick and keeps this in sync, so this starting
+// value doesn't really matter.
+var audioMeterEnabled = true;
 var lastStatusSuccess = Date.now();
 
 console.log(config);
@@ -131,6 +135,60 @@ function getPreview() {
    $("#preview").attr("src", config.preview_uri + "?time=" + d.getTime());
 }
 
+// Maps a GstLevel dB reading onto the meter's 0-100% fill. -78dB and
+// quieter reads as empty; 0dB (full scale) reads as completely full.
+// This camera's room-noise floor measures around -62 to -76dB even when
+// quiet, so the floor is set a bit below that -- a quiet room should still
+// show a thin sliver of green (proof the meter's alive and receiving
+// audio), not look totally dead/gray.
+var AUDIO_METER_FLOOR_DB = -78;
+
+function dbToPercent(db) {
+   var pct = ((db - AUDIO_METER_FLOOR_DB) / (0 - AUDIO_METER_FLOOR_DB)) * 100;
+   return Math.max(0, Math.min(100, pct));
+}
+
+function getAudioLevel() {
+   // Re-read the checkbox directly every call rather than trusting a cached
+   // flag -- makes the checkbox itself the single source of truth, so even
+   // a missed/late change event can't leave the meter polling while the box
+   // shows unchecked (or vice versa).
+   audioMeterEnabled = $("#audioMeterToggle").is(":checked");
+   $("#audioMeterRow").toggle(audioMeterEnabled);
+
+   if (updatesPaused == true || audioMeterEnabled == false) {
+      return;
+   }
+   $.get("/audio-level.php", function (data) {
+      data = JSON.parse(data);
+      var bar = $("#audioMeterBar");
+      var label = $("#audioMeterLabel");
+      var dot = $("#audioStatusDot");
+
+      if (!data.active || !data.peak || data.peak.length == 0) {
+         bar.addClass("stale").removeClass("level-yellow level-red");
+         dot.removeClass("live");
+         label.text(data.stale ? "No signal" : "Silent");
+         return;
+      }
+
+      dot.addClass("live");
+      bar.removeClass("stale");
+      // Use the loudest channel's peak so a meter for stereo/mono input
+      // doesn't under-report a signal only present on one channel.
+      var peakDb = Math.max.apply(null, data.peak);
+      var pct = dbToPercent(peakDb);
+      bar.css("width", pct + "%");
+      bar.toggleClass("level-red", pct >= 90);
+      bar.toggleClass("level-yellow", pct >= 70 && pct < 90);
+      label.text(Math.round(peakDb) + " dB");
+   }).fail(function () {
+      $("#audioMeterBar").addClass("stale").removeClass("level-yellow level-red");
+      $("#audioStatusDot").removeClass("live");
+      $("#audioMeterLabel").text("No signal");
+   });
+}
+
 function sacramentTime() {
    $.post("/set-sac.php", function (data) {
       if (data.Result == "200") {
@@ -200,6 +258,18 @@ const presetSaveModal = new bootstrap.Modal("#presetSaveModal", { keyboard: fals
 
 getPreview();
 var previewTimer = setInterval(getPreview, 1000);
+
+// Delegated (on document) rather than bound directly to the element, so
+// this can't silently fail to attach regardless of load-order quirks.
+// getAudioLevel() itself re-reads the checkbox and shows/hides the row, so
+// this just calls it immediately instead of waiting up to 300ms for the
+// next poll tick.
+$(document).on("change", "#audioMeterToggle", function () {
+   getAudioLevel();
+});
+
+getAudioLevel();
+var audioLevelTimer = setInterval(getAudioLevel, 300);
 
 function powerOff() {
    var input = $("#poweroffDayInput").val();

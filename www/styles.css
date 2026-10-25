@@ -32,3 +32,44 @@ table.ptz-pad .btn{
    background-color: #28a745 !important;
    transition: background-color 0.1s ease-in-out;
 }
+
+.audio-meter{
+   height: 1.25rem;
+   border-radius: 0.25rem;
+   overflow: hidden;
+   border: 1px solid #adb5bd;
+   background-color: #e9ecef;
+}
+
+.audio-meter-bar{
+   height: 100%;
+   width: 0%;
+   background-color: #28a745;
+   transition: width 0.1s linear, background-color 0.1s linear;
+}
+
+.audio-meter-bar.level-yellow{
+   background-color: #ffc107;
+}
+
+.audio-meter-bar.level-red{
+   background-color: #dc3545;
+}
+
+.audio-meter-bar.stale{
+   width: 100% !important;
+   background-color: #adb5bd;
+}
+
+.audio-status-dot{
+   display: inline-block;
+   width: 0.6rem;
+   height: 0.6rem;
+   border-radius: 50%;
+   background-color: #adb5bd;
+   margin-right: 0.35rem;
+}
+
+.audio-status-dot.live{
+   background-color: #28a745;
+}
