@@ -61,6 +61,14 @@ point at anything that accepts a JSON POST). Treat the filled-in
 `notify.sh` like a password (`chmod 700`) — it's gitignored, don't commit
 it with real credentials in it.
 
+## mdns/ — local-network discoverability
+
+`broadcast-computer.service` (an Avahi service-group file) plus a one-line
+`avahi-daemon.conf` change make this box discoverable as
+`broadcast-computer.local`, the way a Chromecast is — see `mdns/README.md`
+for the exact setup and verification steps. Depends only on
+`avahi-daemon`/`avahi-utils`, nothing from `bcast-control`/`ndi-relay`.
+
 ## ndi-preview-check/ — self-heal for a known relay startup race
 
 `ndi-preview-check.sh` + `cron.d/ndi-preview-check-cron` — runs every 2
@@ -100,3 +108,8 @@ sudo systemctl enable --now watchdog-arm.service gateway-watchdog.timer boot-not
 
 Then reboot once so the `nowayout=1` module option actually takes effect
 (check `cat /sys/class/watchdog/watchdog0/nowayout` reads `1` afterward).
+
+`mdns/` isn't part of the above block — it's a one-line
+`avahi-daemon.conf` edit plus a file copied to `/etc/avahi/services/`,
+not `/usr/local/sbin`/systemd/cron like the rest of this directory. See
+`mdns/README.md` for its own install steps.
